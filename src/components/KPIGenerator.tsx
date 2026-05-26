@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Loader2, Copy, Check, PenTool, ClipboardList, Briefcase, FileText } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Loader2, Copy, Check, PenTool, ClipboardList, Briefcase, FileText, RefreshCw, AlertTriangle } from "lucide-react";
 import Markdown from "react-markdown";
 
 export default function KPIGenerator() {
@@ -12,6 +12,79 @@ export default function KPIGenerator() {
   const [lengthLevel, setLengthLevel] = useState("short");
   const [personality, setPersonality] = useState("沉稳务实");
   const [customPersonality, setCustomPersonality] = useState("");
+
+  const [usageCount, setUsageCount] = useState(() => {
+    const key = "kpi_resurrector_use_count_" + new Date().toISOString().split("T")[0];
+    const saved = localStorage.getItem(key);
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  const [showCaptchaModal, setShowCaptchaModal] = useState(false);
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [captchaCode, setCaptchaCode] = useState("");
+  const [captchaError, setCaptchaError] = useState("");
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const generateCaptchaCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let result = "";
+    for (let i = 0; i < 4; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCaptchaCode(result);
+    setCaptchaInput("");
+    setCaptchaError("");
+  };
+
+  const drawCaptcha = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = `rgba(${Math.floor(Math.random() * 100 + 50)}, ${Math.floor(Math.random() * 100 + 50)}, ${Math.floor(Math.random() * 100 + 50)}, 0.4)`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+      ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < 20; i++) {
+      ctx.fillStyle = `rgba(${Math.floor(Math.random() * 150 + 50)}, ${Math.floor(Math.random() * 150 + 50)}, ${Math.floor(Math.random() * 150 + 50)}, 0.5)`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.font = "bold 24px sans-serif";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < captchaCode.length; i++) {
+      const char = captchaCode[i];
+      ctx.save();
+      const x = 20 + i * 28 + (Math.random() * 6 - 3);
+      const y = canvas.height / 2 + (Math.random() * 6 - 3);
+      const angle = (Math.random() * 26 - 13) * Math.PI / 180;
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillStyle = `rgb(${Math.floor(Math.random() * 100)}, ${Math.floor(Math.random() * 100)}, ${Math.floor(Math.random() * 150 + 30)})`;
+      ctx.fillText(char, -10, 0);
+      ctx.restore();
+    }
+  };
+
+  useEffect(() => {
+    if (showCaptchaModal && captchaCode) {
+      setTimeout(() => {
+        drawCaptcha();
+      }, 50);
+    }
+  }, [showCaptchaModal, captchaCode]);
 
   const personalityOptions = ["沉稳务实", "积极进取", "细致严谨", "高效干练", "谦逊复盘", "协作担当", "创新思考", "其他"];
 
@@ -38,12 +111,38 @@ export default function KPIGenerator() {
     setTasks(template.tasks);
   };
 
-  const handleGenerate = async () => {
+  const triggerGenerate = () => {
     if (!role.trim() || !tasks.trim()) {
       setError("职位和工作内容不可为空。");
       return;
     }
     setError("");
+
+    if (usageCount >= 5) {
+      setError("由于防刷安全策略限制，每个设备每日限用 5 次。可加客服 QQ：730170034 获取高级无限版本。");
+      return;
+    }
+
+    if (usageCount >= 3) {
+      generateCaptchaCode();
+      setShowCaptchaModal(true);
+    } else {
+      executeGenerate();
+    }
+  };
+
+  const handleVerifyCaptcha = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (captchaInput.trim().toUpperCase() === captchaCode) {
+      setShowCaptchaModal(false);
+      executeGenerate();
+    } else {
+      setCaptchaError("验证码输入有误，请重新输入");
+      generateCaptchaCode();
+    }
+  };
+
+  const executeGenerate = async () => {
     setIsLoading(true);
     setReport("");
     
@@ -62,6 +161,11 @@ export default function KPIGenerator() {
       }
       
       setReport(data.report);
+
+      const key = "kpi_resurrector_use_count_" + new Date().toISOString().split("T")[0];
+      const newCount = usageCount + 1;
+      localStorage.setItem(key, newCount.toString());
+      setUsageCount(newCount);
     } catch (err: any) {
       setError(err.message || "生成失败，请稍后重试");
     } finally {
@@ -215,23 +319,63 @@ export default function KPIGenerator() {
           </div>
         )}
 
-        <button
-          onClick={handleGenerate}
-          disabled={isLoading || !role || !tasks}
-          className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-medium shadow-sm transition-all flex items-center justify-center gap-2"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              正在为您进行专业包装...
-            </>
+        {usageCount >= 5 ? (
+          <div className="w-full p-4.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-sm">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold flex items-center gap-2 text-rose-950 mb-1">
+                  ⚠️ 今日免费额度已耗尽 (5/5)
+                </h4>
+                <p className="leading-relaxed text-xs text-rose-700 mb-3.5">
+                  为限制接口恶意高频调用、防止刷机，系统限制单日最高使用 5 次。感谢您的配合。
+                </p>
+                <div className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-xs text-xs">
+                  <span className="font-semibold text-slate-600">解锁无限周报/商务版权限：</span>
+                  <a 
+                    href="https://wpa.qq.com/msgrd?v=3&uin=730170034&site=qq&menu=yes"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+                  >
+                    QQ: 730170034 ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={triggerGenerate}
+            disabled={isLoading || !role || !tasks}
+            className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold shadow-sm transition-all flex items-center justify-center gap-2 select-none"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                正在深度包装与推导中...
+              </>
+            ) : (
+              <>
+                <PenTool className="w-5 h-5" />
+                一键生成专业周报 {usageCount >= 3 && " (需安全校验)"}
+              </>
+            )}
+          </button>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-slate-400 font-medium px-1">
+          <span className="flex items-center gap-1">
+            今日已生成额度: <strong className={usageCount >= 5 ? "text-rose-500" : usageCount >= 3 ? "text-amber-500" : "text-blue-500"}>{usageCount}</strong> / 5
+          </span>
+          {usageCount >= 5 ? (
+            <span className="text-rose-500 font-bold">已触发拦截限制</span>
+          ) : usageCount >= 3 ? (
+            <span className="text-amber-500 font-semibold flex items-center gap-1 animate-pulse">● 触发防刷安全验证</span>
           ) : (
-            <>
-              <PenTool className="w-5 h-5" />
-              一键生成专业周报
-            </>
+            <span>剩余免验证额度: {Math.max(0, 3 - usageCount)} 次</span>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Output Section */}
@@ -289,6 +433,91 @@ export default function KPIGenerator() {
           )}
         </div>
       </div>
+      {/* Captcha Modal */}
+      {showCaptchaModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-6 relative animate-in fade-in duration-200 text-slate-800">
+            <button
+              onClick={() => setShowCaptchaModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 transition-colors w-7 h-7 flex items-center justify-center rounded-full text-xs animate-none"
+            >
+              ✕
+            </button>
+            
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                <h3 className="font-bold text-base text-slate-900">安全验证：防止恶意刷量</h3>
+              </div>
+              
+              <p className="text-xs text-slate-500 leading-relaxed">
+                为防范恶意接口自动化大量刷量，今日内累计生成超过 3 次周报，需要完成人机图形学安全校验。
+              </p>
+              
+              <div className="bg-slate-50 p-4 border border-slate-100 rounded-xl my-2 flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-3">
+                  <canvas
+                    ref={canvasRef}
+                    width={150}
+                    height={46}
+                    onClick={generateCaptchaCode}
+                    title="点击刷新验证码"
+                    className="border border-slate-200 rounded-lg cursor-pointer bg-white shadow-xs hover:opacity-90 transition-opacity"
+                  />
+                  <button
+                    type="button"
+                    onClick={generateCaptchaCode}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 animate-none" />
+                    换一张
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleVerifyCaptcha} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-slate-500">
+                    请输入图片中的 4 位字符：
+                  </label>
+                  <input
+                    type="text"
+                    value={captchaInput}
+                    onChange={(e) => setCaptchaInput(e.target.value)}
+                    placeholder="不区分大小写"
+                    maxLength={4}
+                    autoFocus
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 uppercase font-mono font-bold text-center text-lg tracking-widest focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none bg-slate-50 focus:bg-white transition-all text-slate-900"
+                  />
+                </div>
+                
+                {captchaError && (
+                  <p className="text-xs text-red-600 font-semibold px-1 text-center">
+                    ❌ {captchaError}
+                  </p>
+                )}
+                
+                <div className="flex gap-3.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCaptchaModal(false)}
+                    className="flex-1 py-1 px-3 bg-slate-50 text-slate-600 hover:bg-slate-100 text-sm font-semibold rounded-lg transition-colors border border-slate-200 text-center"
+                  >
+                    返回
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={captchaInput.trim().length !== 4}
+                    className="flex-1 py-1 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg shadow-md transition-all active:scale-[0.98]"
+                  >
+                    提交验证
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
